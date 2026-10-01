@@ -13,11 +13,11 @@ __DIR__ = os.path.dirname(__FILE__)
 
 """Symlink creation and management utilities."""
 
-import logging
+import scitex_logging as slogging
 from pathlib import Path
 from typing import Optional, Union
 
-logger = logging.getLogger(__name__)
+log = slogging.getLogger(__name__)
 
 
 def symlink(
@@ -95,7 +95,7 @@ def symlink(
                     src_for_link = Path(rel_path)
                 except ValueError:
                     # Can't create relative path (e.g., different drives on Windows)
-                    logger.warning(
+                    log.warning(
                         f"Cannot create relative path from {dst_path} to {src_path}, using absolute"
                     )
                     src_for_link = src_path.absolute()
@@ -109,7 +109,7 @@ def symlink(
                     src_for_link = Path(rel_path)
                 except ValueError:
                     # Can't create relative path
-                    logger.warning(
+                    log.warning(
                         f"Cannot create relative path from {dst_path} to {src_path}"
                     )
                     src_for_link = src_path
@@ -117,10 +117,10 @@ def symlink(
             src_for_link = src_path.absolute()
 
         dst_path.symlink_to(src_for_link, target_is_directory=target_is_directory)
-        logger.info(f"Created symlink: {dst_path} -> {src_for_link}")
+        log.info(f"Created symlink: {dst_path} -> {src_for_link}")
 
     except OSError as e:
-        logger.warning(
+        log.warning(
             f"Failed to create symlink from {dst_path} to {src_for_link}: {str(e)}"
         )
 
