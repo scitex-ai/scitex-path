@@ -1,5 +1,7 @@
 """Enforces SciTeX skills quality checklist §1–§4."""
 
+# PS-206b: import-smoke-allowed — generated skill-quality wrapper, assertions live in scitex-dev.
+
 from pathlib import Path
 
 import pytest

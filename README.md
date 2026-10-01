@@ -16,7 +16,7 @@
 <p align="center">
   <a href="https://pypi.org/project/scitex-path/"><img src="https://img.shields.io/pypi/v/scitex-path?label=pypi" alt="pypi"></a>
   <a href="https://pypi.org/project/scitex-path/"><img src="https://img.shields.io/pypi/pyversions/scitex-path?label=python" alt="python"></a>
-  <a href="https://github.com/ywatanabe1989/scitex-path/actions/workflows/rtd-sphinx-build-on-ubuntu-latest.yml"><img src="https://img.shields.io/github/actions/workflow/status/ywatanabe1989/scitex-path/rtd-sphinx-build-on-ubuntu-latest.yml?branch=develop&label=docs" alt="docs"></a>
+  <a href="https://scitex-path.readthedocs.io/en/latest/"><img src="https://img.shields.io/readthedocs/scitex-path?label=docs" alt="docs"></a>
 </p>
 <p align="center">
   <a href="https://github.com/ywatanabe1989/scitex-path/actions/workflows/pytest-matrix-on-ubuntu-py3-11-3-12-3-13.yml"><img src="https://img.shields.io/github/actions/workflow/status/ywatanabe1989/scitex-path/pytest-matrix-on-ubuntu-py3-11-3-12-3-13.yml?branch=develop&label=tests" alt="tests"></a>
@@ -31,14 +31,8 @@
 
 | # | Problem | Solution |
 |---|---------|----------|
-| 1 | **Scripts hard-code `/home/user/proj/...` paths** — break the moment someone else runs them | **`find_git_root()` + `get_spath(filename)`** — paths auto-resolve to the repo root and the current script's `_out/` dir |
-| 2 | **`{script}_out/` convention implemented 33 different ways** — inconsistent, error-prone | **Canonical helpers** — `mk_spath`, `get_this_path`, `create_relative_symlink`, `find_latest` standardize the pattern |
-
-## Installation
-
-```bash
-pip install scitex-path
-```
+| 1 | **Hard-coded paths** — scripts break on other machines. | **Auto-resolve** — find_git_root plus get_spath fixes locations. |
+| 2 | **Scattered outputs** — every script invents its own out-dir. | **Canonical helpers** — mk_spath and friends standardize layout. |
 
 ## Quick Start
 
@@ -48,6 +42,85 @@ import scitex_path as sp
 git_root = sp.find_git_root()
 matches = sp.find_file("/data/project", "*.csv")
 ```
+
+## Demo
+
+```mermaid
+%%{init: {'flowchart': {'nodeSpacing': 20, 'rankSpacing': 40, 'curve': 'linear'}, 'themeVariables': {'fontSize': '12px'}}}%%
+flowchart LR
+    A[script.py] -->|find_git_root| B[repo root]
+    A -->|mk_spath| C[script_out/]
+    C --> D[results.csv]
+    D -->|create_relative_symlink| E[repo/latest.csv]
+    F[/runs/experiment_v*/] -->|find_latest| G[experiment_v17.txt]
+```
+
+<p align="center"><sub><b>Figure 1.</b> Path resolution flow from calling script to versioned outputs.</sub></p>
+
+```python
+import scitex_path as sp
+
+root = sp.find_git_root()                                # → /home/me/proj/myrepo
+out  = sp.mk_spath("results.csv")                        # → <script>_out/results.csv
+sp.create_relative_symlink(out, root / "latest.csv")
+print(sp.find_latest("/runs", "experiment", ".txt"))     # → /runs/experiment_v17.txt
+```
+
+```
+/home/me/proj/myrepo
+/home/me/proj/myrepo/scripts/train_out/results.csv
+/runs/experiment_v17.txt
+```
+
+## Installation
+
+```bash
+uv pip install "scitex-path[all]"
+```
+
+<details>
+<summary><b>Per-module extras</b></summary>
+
+<br>
+
+| Extra | Pulls in |
+|---|---|
+| `dev` | pytest, pytest-cov, scitex-dev |
+| `docs` | Sphinx plus theme and myst-parser |
+| `all` | dev plus docs (recommended) |
+
+```bash
+uv pip install "scitex-path[dev]"  # contributors
+uv pip install -e ".[dev]"         # editable install
+```
+
+</details>
+
+## Architecture
+
+### 1. Find and resolve
+
+`find_file`, `find_dir`, and `find_git_root` locate files and the repo root without hard-coded paths.
+
+### 2. Session outputs
+
+`mk_spath`, `get_spath`, and `this_path` anchor outputs to the calling script's `_out` directory.
+
+### 3. Links and versions
+
+`symlink` helpers manage links while `increment_version` and `find_latest` handle versioned runs.
+
+```mermaid
+%%{init: {'flowchart': {'nodeSpacing': 20, 'rankSpacing': 40, 'curve': 'linear'}, 'themeVariables': {'fontSize': '12px'}}}%%
+flowchart LR
+    FIND[find module] --> RESOLVE[this_path and spath]
+    RESOLVE --> LINK[symlink module]
+    RESOLVE --> VERSION[version module]
+    LINK --> OUT[stable paths]
+    VERSION --> OUT
+```
+
+<p align="center"><sub><b>Figure 2.</b> Module collaboration from discovery to stable versioned paths.</sub></p>
 
 ## 1 Interfaces
 
@@ -86,50 +159,6 @@ sp.get_spath(filename) / sp.mk_spath(filename)
 ```
 
 </details>
-
-## Architecture
-
-```
-scitex_path/
-├── _clean.py              ← clean
-├── _find.py               ← find_file, find_dir, find_git_root
-├── _get_module_path.py    ← get_data_path_from_a_package
-├── _getsize.py            ← getsize
-├── _mk_spath.py           ← mk_spath
-├── _split.py              ← split
-├── _symlink.py            ← symlink, create_relative_symlink,
-│                            list_symlinks, fix_broken_symlinks,
-│                            resolve_symlinks, is_symlink, readlink,
-│                            unlink_symlink
-├── _this_path.py          ← this_path, get_this_path
-└── _version.py            ← find_latest, increment_version
-```
-
-## Demo
-
-```mermaid
-flowchart LR
-    A[script.py] -->|find_git_root| B[repo root]
-    A -->|mk_spath| C[script_out/]
-    C --> D[results.csv]
-    D -->|create_relative_symlink| E[repo/latest.csv]
-    F[/runs/experiment_v*/] -->|find_latest| G[experiment_v17.txt]
-```
-
-```python
-import scitex_path as sp
-
-root = sp.find_git_root()                                # → /home/me/proj/myrepo
-out  = sp.mk_spath("results.csv")                        # → <script>_out/results.csv
-sp.create_relative_symlink(out, root / "latest.csv")
-print(sp.find_latest("/runs", "experiment", ".txt"))     # → /runs/experiment_v17.txt
-```
-
-```
-/home/me/proj/myrepo
-/home/me/proj/myrepo/scripts/train_out/results.csv
-/runs/experiment_v17.txt
-```
 
 ## Part of SciTeX
 

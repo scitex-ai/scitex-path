@@ -8,3 +8,15 @@ audit:
       # Codecov ALWAYS reads `codecov.yml` from repo root — non-negotiable
       # location per codecov.io docs. Whitelist it from PS-103.
       - codecov.yml
+  exemptions:
+    PS-224:
+      - path: .github/workflows/cla.yml::call
+        line: 0
+        reason: >-
+          Deliberately GitHub-hosted. This job runs third-party CLA code
+          under unauthenticated issue_comment/pull_request_target triggers
+          which the fork-PR approval gate does not cover. Spartan runners
+          are persistent with $HOME holding live fleet credentials, so
+          repointing would let any stranger execute third-party code next
+          to that credential by commenting. Kept hosted until an
+          ephemeral/isolated runner exists for untrusted-trigger workflows.

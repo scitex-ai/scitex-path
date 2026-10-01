@@ -1,53 +1,38 @@
 #!/usr/bin/env bash
-# Runs INSIDE the reused CI SIF (apptainer exec). $1 = python version.
-#
-# The SIF (~/.scitex/dev/containers/ci-cpu.sif, on punim0264) bakes the curated
-# ecosystem dependency union — the scientific core (numpy/scipy/pandas/
-# matplotlib/torch/…), the scitex basics (io/logging/config/dict/decorators/
-# gen/nn/stats/str/dsp), scitex-dev[all,dev], figrecipe, and the pytest
-# toolchain — FULLY installed in a per-version venv at /opt/venv-$V. It is
-# READ-ONLY, so CI runs the CHECKOUT's code by prepending it on PYTHONPATH:
-# that shadows any baked copy for imports + coverage, while the baked installs
-# still supply the importlib.metadata surface (entry points, __version__) that
-# a bare PYTHONPATH cannot.
-#
-# No install, no --writable-tmpfs: nothing is written into the SIF (the baked
-# venv is root-owned — a runtime install hits Permission denied even on a
-# tmpfs overlay).
-#
-# Fail-loud: a SIF without the baked venv is a hard error (rebuild the SIF) —
-# never a per-run install fallback. A dep this package imports that is missing
-# from the SIF is ALSO a hard error: bake it into the SIF (top up ci-cpu.def),
-# never `pip install` it here.
+# Runs inside the digest-verified CI SIF. Install this checkout's complete
+# declared test environment into job-owned writable scratch; never retry
+# with fewer extras. Tests use only package-owned temporary state.
 set -euo pipefail
-
-V="${1:?python version arg required (3.11/3.12/3.13)}"
+V="${1:?python version required}"
 VENV="/opt/venv-$V"
-test -x "$VENV/bin/python" || {
-    echo "::error::baked venv python missing in $VENV — rebuild: scitex-container apptainer build ci-cpu"
-    exit 1
-}
-test -x "$VENV/bin/pytest" || {
-    echo "::error::baked pytest missing in $VENV — rebuild: scitex-container apptainer build ci-cpu"
-    exit 1
-}
-
+PY="$VENV/bin/python"
+test -x "$PY" || { echo "::error::baked python missing in $VENV"; exit 1; }
 export LC_ALL=C.UTF-8 LANG=C.UTF-8
-
-# Real writable scratch. The runner profile exports TMPDIR to a host path that
-# does NOT resolve inside the container; tests (tmp_path) and mktemp need a
-# working tmp. Node-local /tmp is writable + ephemeral.
-export TMPDIR="/tmp/ci-$V"
-mkdir -p "$TMPDIR"
-
-# A VIRTUAL_ENV leaked from the runner profile is a broken symlink in here;
-# unset it so no tool (uv, pip) tries to follow it.
+export TMPDIR="/tmp/ci-scitex_path-${GITHUB_RUN_ID:-0}-${GITHUB_RUN_ATTEMPT:-0}-$V"
+rm -rf "${TMPDIR:?}"
+mkdir -p "$TMPDIR/site" "$TMPDIR/uv-cache" "$TMPDIR/scitex-state"
+export UV_CACHE_DIR="$TMPDIR/uv-cache" XDG_CACHE_HOME="$TMPDIR/cache"
+export PIP_CACHE_DIR="$TMPDIR/pip-cache" MPLCONFIGDIR="$TMPDIR/mpl"
+export SCITEX_DIR="$TMPDIR/scitex-state" MPLBACKEND=Agg RUN_E2E=1
+# IPython and Jupyter otherwise create state below HOME even when TMPDIR
+# is writable. Keep notebook execution on the same job-owned filesystem.
+export XDG_CONFIG_HOME="$TMPDIR/config" XDG_DATA_HOME="$TMPDIR/data"
+export IPYTHONDIR="$TMPDIR/ipython" JUPYTER_CONFIG_DIR="$TMPDIR/jupyter-config"
+export JUPYTER_DATA_DIR="$TMPDIR/jupyter-data" JUPYTER_RUNTIME_DIR="$TMPDIR/jupyter-runtime"
+mkdir -p "$MPLCONFIGDIR" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$IPYTHONDIR" \
+    "$JUPYTER_CONFIG_DIR" "$JUPYTER_DATA_DIR" "$JUPYTER_RUNTIME_DIR"
 unset VIRTUAL_ENV || true
-
-# venv bin on PATH (python3, pytest, baked console scripts); PYTHONPATH
-# prepends the checkout so imports + coverage use the PR code.
 export PATH="$VENV/bin:$PATH"
-export PYTHONPATH="$PWD/src"
-
-echo "py=$("$VENV"/bin/python -V) pytest=$(command -v pytest)"
-exec pytest tests/ --cov=src/scitex_path --cov-report=xml --cov-report=term
+uv pip install --python "$PY" --target="$TMPDIR/site" -e ".[all,dev]"
+export PYTHONPATH="$TMPDIR/site:$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
+NPROC="$(nproc 2>/dev/null || echo 4)"
+WORKERS=$NPROC
+[ "$WORKERS" -lt 4 ] && WORKERS=4
+echo "py=$("$PY" -V) xdist workers=$WORKERS (nproc=$NPROC) RUN_E2E=$RUN_E2E"
+if "$PY" -c "import matplotlib" 2>/dev/null; then
+    "$PY" -c "from matplotlib import font_manager; font_manager.fontManager"
+fi
+exec nice -n 19 ionice -c 3 \
+    "$PY" -m pytest tests/ -n "$WORKERS" --dist load -q \
+    --cov=src/scitex_path --cov-report=xml --cov-report=term \
+    -p no:cacheprovider
