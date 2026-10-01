@@ -2,7 +2,6 @@ name: CLA Assistant
 
 # PILOT: org-level reusable-workflow caller (scitex-ai/.github, 2026-07-10).
 # Triggers/permissions preserved verbatim from the prior local file.
-# This repo's prior allowlist included an extra login (LLEmacs) beyond the
 # reusable default ("bot*,ywatanabe1989") — overridden via `with:` below
 # so the allowlist behavior is unchanged.
 # NOTE: this repo's on: has no `push` trigger, so the reusable's
@@ -26,4 +25,4 @@ jobs:
     uses: scitex-ai/.github/.github/workflows/cla.yml@main
     secrets: inherit
     with:
-      owner_allowlist: "bot*,ywatanabe1989,LLEmacs"
+      owner_allowlist: "bot*,ywatanabe1989"
